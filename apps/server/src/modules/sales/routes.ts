@@ -42,7 +42,7 @@ export const saleRoutes: FastifyPluginAsync = async (app) => {
     "/sales",
     { schema: { tags: ["sales"], body: saleCreateSchema } },
     async (request, reply) => {
-      const { items, descuento, medioPago, montoRecibido, usuarioId, sesionId } = request.body;
+      const { items, descuento, medioPago, montoRecibido, montoEfectivo, usuarioId, sesionId } = request.body;
 
       const products = await prisma.product.findMany({
         where: { id: { in: items.map((i) => i.productId) } },
@@ -67,10 +67,15 @@ export const saleRoutes: FastifyPluginAsync = async (app) => {
       if (medioPago === "EFECTIVO" && montoRecibido !== undefined && montoRecibido < total) {
         return reply.code(400).send({ error: "El monto recibido es menor al total" });
       }
+      if (medioPago === "MIXTO" && (montoEfectivo === undefined || montoEfectivo > total)) {
+        return reply.code(400).send({ error: "Falta indicar el monto en efectivo del pago mixto" });
+      }
       const cambio =
         medioPago === "EFECTIVO" && montoRecibido !== undefined
           ? Math.round((montoRecibido - total) * 100) / 100
           : null;
+      const montoEfectivoFinal =
+        medioPago === "EFECTIVO" ? total : medioPago === "MIXTO" ? montoEfectivo : null;
 
       const sale = await prisma.$transaction(async (tx) => {
         const ultimaVenta = await tx.sale.findFirst({ orderBy: { numeroTicket: "desc" } });
@@ -86,6 +91,7 @@ export const saleRoutes: FastifyPluginAsync = async (app) => {
             medioPago,
             montoRecibido,
             cambio: cambio ?? undefined,
+            montoEfectivo: montoEfectivoFinal ?? undefined,
             numeroTicket,
             items: { create: saleItemsData },
           },

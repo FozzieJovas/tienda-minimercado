@@ -13,12 +13,33 @@ import { settingsRoutes } from "./modules/settings/routes.js";
 import { saleRoutes } from "./modules/sales/routes.js";
 import { purchaseRoutes } from "./modules/purchases/routes.js";
 import { reportRoutes } from "./modules/reports/routes.js";
+import { authRoutes } from "./modules/auth/routes.js";
+import { userRoutes } from "./modules/users/routes.js";
+import { cashRegisterRoutes } from "./modules/cash-register/routes.js";
+import { prisma } from "./db/client.js";
+import { hashPassword } from "./modules/auth/password.js";
 
 const PORT = Number(process.env.PORT ?? 4000);
 const HOST = process.env.HOST ?? "0.0.0.0";
 
+async function seedAdminIfNeeded() {
+  const count = await prisma.user.count();
+  if (count > 0) return;
+  await prisma.user.create({
+    data: {
+      nombre: "Administrador",
+      usuario: "admin",
+      passwordHash: hashPassword("admin1234"),
+      rol: "ADMIN",
+    },
+  });
+  console.log('Usuario admin creado (usuario: "admin", contraseña: "admin1234"). Cámbiala cuanto antes.');
+}
+
 async function main() {
   const app = Fastify({ logger: true });
+
+  await seedAdminIfNeeded();
 
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
@@ -40,6 +61,9 @@ async function main() {
     await api.register(saleRoutes);
     await api.register(purchaseRoutes);
     await api.register(reportRoutes);
+    await api.register(authRoutes);
+    await api.register(userRoutes);
+    await api.register(cashRegisterRoutes);
   }, { prefix: "/api" });
 
   await app.listen({ port: PORT, host: HOST });

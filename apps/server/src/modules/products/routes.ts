@@ -39,6 +39,19 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
+  server.get(
+    "/products/by-barcode/:barcode",
+    { schema: { tags: ["products"], params: z.object({ barcode: z.string() }) } },
+    async (request, reply) => {
+      const product = await prisma.product.findUnique({
+        where: { barcode: request.params.barcode },
+        include: { categoria: true },
+      });
+      if (!product) return reply.code(404).send({ error: "No hay ningún producto con ese código de barras" });
+      return product;
+    }
+  );
+
   server.post(
     "/products",
     { schema: { tags: ["products"], body: productCreateSchema } },
@@ -87,6 +100,42 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
           precioVenta: calcularPrecioVenta(costoActual, margen),
         },
       });
+      return product;
+    }
+  );
+
+  server.post(
+    "/products/:id/stock-adjustment",
+    {
+      schema: {
+        tags: ["products"],
+        params: productParamsSchema,
+        body: z.object({
+          cantidadDelta: z.number().refine((v) => v !== 0, "cantidadDelta no puede ser 0"),
+          tipo: z.enum(["AJUSTE", "MERMA"]).default("AJUSTE"),
+          motivo: z.string().optional(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const existing = await prisma.product.findUnique({ where: { id: request.params.id } });
+      if (!existing) return reply.code(404).send({ error: "Producto no encontrado" });
+
+      const { cantidadDelta, tipo, motivo } = request.body;
+      const [product] = await prisma.$transaction([
+        prisma.product.update({
+          where: { id: request.params.id },
+          data: { stockActual: { increment: cantidadDelta } },
+        }),
+        prisma.stockMovement.create({
+          data: {
+            productId: request.params.id,
+            tipo,
+            cantidadDelta,
+            referenciaTipo: motivo,
+          },
+        }),
+      ]);
       return product;
     }
   );

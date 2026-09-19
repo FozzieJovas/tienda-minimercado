@@ -164,6 +164,9 @@ model Sale {
   medioPago    PaymentMethod @default(EFECTIVO)
   montoRecibido Float?
   cambio       Float?
+  // Porción pagada en efectivo cuando medioPago = MIXTO; para EFECTIVO puro coincide con total.
+  // Se usa para calcular el efectivo esperado del cierre de caja.
+  montoEfectivo Float?
   estado       SaleStatus    @default(COMPLETADA)
   // SQLite no soporta autoincrement() en un campo que no es @id: el módulo de ventas
   // debe asignar este número (p. ej. max(numeroTicket)+1 en una transacción) al crear la venta.
