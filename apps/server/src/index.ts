@@ -10,6 +10,9 @@ import {
 import { productRoutes } from "./modules/products/routes.js";
 import { categoryRoutes } from "./modules/categories/routes.js";
 import { settingsRoutes } from "./modules/settings/routes.js";
+import { saleRoutes } from "./modules/sales/routes.js";
+import { purchaseRoutes } from "./modules/purchases/routes.js";
+import { reportRoutes } from "./modules/reports/routes.js";
 
 const PORT = Number(process.env.PORT ?? 4000);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -34,6 +37,9 @@ async function main() {
     await api.register(productRoutes);
     await api.register(categoryRoutes);
     await api.register(settingsRoutes);
+    await api.register(saleRoutes);
+    await api.register(purchaseRoutes);
+    await api.register(reportRoutes);
   }, { prefix: "/api" });
 
   await app.listen({ port: PORT, host: HOST });
