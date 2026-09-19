@@ -1,0 +1,15 @@
+services:
+  server:
+    build:
+      context: ./apps/server
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=file:/app/data/tienda.db
+      - PORT=4000
+      - HOST=0.0.0.0
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./apps/server/data:/app/data
+    restart: unless-stopped

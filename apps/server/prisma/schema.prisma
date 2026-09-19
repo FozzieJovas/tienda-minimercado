@@ -1,0 +1,228 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  CAJERO
+  INVENTARIO
+}
+
+enum PaymentMethod {
+  EFECTIVO
+  TARJETA
+  TRANSFERENCIA
+  MIXTO
+}
+
+enum SaleStatus {
+  COMPLETADA
+  ANULADA
+}
+
+enum PurchaseInvoiceStatus {
+  PENDIENTE_REVISION
+  CONFIRMADA
+}
+
+enum StockMovementType {
+  COMPRA
+  VENTA
+  AJUSTE
+  MERMA
+}
+
+enum CashSessionStatus {
+  ABIERTA
+  CERRADA
+}
+
+enum CashMovementType {
+  INGRESO
+  RETIRO
+}
+
+model User {
+  id           String   @id @default(cuid())
+  nombre       String
+  usuario      String   @unique
+  passwordHash String
+  rol          UserRole @default(CAJERO)
+  activo       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  ventas             Sale[]
+  purchasesCreadas   PurchaseInvoice[]
+  sesionesAbiertas   CashRegisterSession[] @relation("usuarioApertura")
+  sesionesCerradas   CashRegisterSession[] @relation("usuarioCierre")
+}
+
+model Category {
+  id            String  @id @default(cuid())
+  nombre        String  @unique
+  margenDefault Float?
+
+  productos Product[]
+}
+
+model Supplier {
+  id       String  @id @default(cuid())
+  nombre   String
+  nit      String?
+  telefono String?
+  contacto String?
+
+  facturas PurchaseInvoice[]
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  sku            String?  @unique
+  barcode        String?  @unique
+  nombre         String
+  categoriaId    String?
+  unidadMedida   String   @default("unidad")
+  costoActual    Float    @default(0)
+  precioVenta    Float    @default(0)
+  margenOverride Float?
+  stockActual    Float    @default(0)
+  stockMinimo    Float    @default(0)
+  activo         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  categoria      Category?       @relation(fields: [categoriaId], references: [id])
+  purchaseItems  PurchaseItem[]
+  saleItems      SaleItem[]
+  stockMovements StockMovement[]
+
+  @@index([categoriaId])
+}
+
+model PurchaseInvoice {
+  id            String                @id @default(cuid())
+  supplierId    String?
+  numeroFactura String?
+  fecha         DateTime?
+  fotos         String                @default("[]")
+  estado        PurchaseInvoiceStatus @default(PENDIENTE_REVISION)
+  total         Float                 @default(0)
+  creadoPorId   String?
+  createdAt     DateTime              @default(now())
+
+  supplier   Supplier?      @relation(fields: [supplierId], references: [id])
+  creadoPor  User?          @relation(fields: [creadoPorId], references: [id])
+  items      PurchaseItem[]
+
+  @@index([supplierId])
+}
+
+model PurchaseItem {
+  id                 String  @id @default(cuid())
+  purchaseId         String
+  productId          String?
+  descripcionCruda   String
+  cantidad           Float
+  costoUnitario      Float
+  subtotal           Float
+  confianzaMatch     String?
+
+  purchase PurchaseInvoice @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product  Product?        @relation(fields: [productId], references: [id])
+
+  @@index([purchaseId])
+  @@index([productId])
+}
+
+model StockMovement {
+  id             String            @id @default(cuid())
+  productId      String
+  tipo           StockMovementType
+  cantidadDelta  Float
+  referenciaTipo String?
+  referenciaId   String?
+  fecha          DateTime          @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+}
+
+model Sale {
+  id           String        @id @default(cuid())
+  sesionId     String?
+  usuarioId    String?
+  fecha        DateTime      @default(now())
+  subtotal     Float
+  descuento    Float         @default(0)
+  total        Float
+  medioPago    PaymentMethod @default(EFECTIVO)
+  montoRecibido Float?
+  cambio       Float?
+  estado       SaleStatus    @default(COMPLETADA)
+  // SQLite no soporta autoincrement() en un campo que no es @id: el módulo de ventas
+  // debe asignar este número (p. ej. max(numeroTicket)+1 en una transacción) al crear la venta.
+  numeroTicket Int           @unique
+
+  sesion  CashRegisterSession? @relation(fields: [sesionId], references: [id])
+  usuario User?                @relation(fields: [usuarioId], references: [id])
+  items   SaleItem[]
+
+  @@index([sesionId])
+}
+
+model SaleItem {
+  id             String @id @default(cuid())
+  saleId         String
+  productId      String
+  cantidad       Float
+  precioUnitario Float
+  subtotal       Float
+
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([saleId])
+  @@index([productId])
+}
+
+model CashRegisterSession {
+  id                String             @id @default(cuid())
+  usuarioAperturaId String?
+  abiertoEn         DateTime           @default(now())
+  fondoInicial      Float
+  usuarioCierreId   String?
+  cerradoEn         DateTime?
+  efectivoContado   Float?
+  efectivoEsperado  Float?
+  diferencia        Float?
+  estado            CashSessionStatus  @default(ABIERTA)
+
+  usuarioApertura User?           @relation("usuarioApertura", fields: [usuarioAperturaId], references: [id])
+  usuarioCierre   User?           @relation("usuarioCierre", fields: [usuarioCierreId], references: [id])
+  ventas          Sale[]
+  movimientos     CashMovement[]
+}
+
+model CashMovement {
+  id       String           @id @default(cuid())
+  sesionId String
+  tipo     CashMovementType
+  monto    Float
+  motivo   String?
+  fecha    DateTime         @default(now())
+
+  sesion CashRegisterSession @relation(fields: [sesionId], references: [id], onDelete: Cascade)
+
+  @@index([sesionId])
+}
+
+model Setting {
+  clave  String @id
+  valor  String
+}

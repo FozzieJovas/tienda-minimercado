@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.env
+.claude/
+apps/server/data/*.db
+apps/server/data/*.db-journal
+apps/server/data/*.db-wal
+apps/server/data/*.db-shm
+apps/server/data/uploads/*
+!apps/server/data/uploads/.gitkeep
+apps/server/data/backups/*
+!apps/server/data/backups/.gitkeep
+
+# Flutter
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+
+.DS_Store
+Thumbs.db

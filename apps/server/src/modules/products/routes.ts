@@ -1,0 +1,105 @@
+import type { FastifyPluginAsync } from "fastify";
+import type { ZodTypeProvider } from "fastify-type-provider-zod";
+import { z } from "zod";
+import { prisma } from "../../db/client.js";
+import { productCreateSchema, productParamsSchema, productUpdateSchema } from "./schemas.js";
+import { calcularPrecioVenta, resolveMargin } from "./pricing.js";
+
+export const productRoutes: FastifyPluginAsync = async (app) => {
+  const server = app.withTypeProvider<ZodTypeProvider>();
+
+  server.get(
+    "/products",
+    {
+      schema: {
+        tags: ["products"],
+        querystring: z.object({ activo: z.coerce.boolean().optional() }),
+      },
+    },
+    async (request) => {
+      const { activo } = request.query;
+      return prisma.product.findMany({
+        where: activo === undefined ? undefined : { activo },
+        include: { categoria: true },
+        orderBy: { nombre: "asc" },
+      });
+    }
+  );
+
+  server.get(
+    "/products/:id",
+    { schema: { tags: ["products"], params: productParamsSchema } },
+    async (request, reply) => {
+      const product = await prisma.product.findUnique({
+        where: { id: request.params.id },
+        include: { categoria: true },
+      });
+      if (!product) return reply.code(404).send({ error: "Producto no encontrado" });
+      return product;
+    }
+  );
+
+  server.post(
+    "/products",
+    { schema: { tags: ["products"], body: productCreateSchema } },
+    async (request, reply) => {
+      const data = request.body;
+      const categoria = data.categoriaId
+        ? await prisma.category.findUnique({ where: { id: data.categoriaId } })
+        : null;
+      const margen = await resolveMargin({
+        margenOverride: data.margenOverride,
+        categoriaMargenDefault: categoria?.margenDefault,
+      });
+      const product = await prisma.product.create({
+        data: {
+          ...data,
+          precioVenta: calcularPrecioVenta(data.costoActual, margen),
+        },
+      });
+      return reply.code(201).send(product);
+    }
+  );
+
+  server.patch(
+    "/products/:id",
+    { schema: { tags: ["products"], params: productParamsSchema, body: productUpdateSchema } },
+    async (request, reply) => {
+      const existing = await prisma.product.findUnique({ where: { id: request.params.id } });
+      if (!existing) return reply.code(404).send({ error: "Producto no encontrado" });
+
+      const data = request.body;
+      const categoriaId = data.categoriaId ?? existing.categoriaId;
+      const categoria = categoriaId
+        ? await prisma.category.findUnique({ where: { id: categoriaId } })
+        : null;
+      const costoActual = data.costoActual ?? existing.costoActual;
+      const margenOverride = data.margenOverride ?? existing.margenOverride;
+      const margen = await resolveMargin({
+        margenOverride,
+        categoriaMargenDefault: categoria?.margenDefault,
+      });
+
+      const product = await prisma.product.update({
+        where: { id: request.params.id },
+        data: {
+          ...data,
+          precioVenta: calcularPrecioVenta(costoActual, margen),
+        },
+      });
+      return product;
+    }
+  );
+
+  server.delete(
+    "/products/:id",
+    { schema: { tags: ["products"], params: productParamsSchema } },
+    async (request) => {
+      const product = await prisma.product.update({
+        where: { id: request.params.id },
+        data: { activo: false },
+      });
+      return product;
+    }
+  );
+};
