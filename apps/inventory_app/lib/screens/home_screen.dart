@@ -3,6 +3,7 @@ import '../models/app_user.dart';
 import '../services/session_service.dart';
 import 'adjustment_screen.dart';
 import 'reception_screen.dart';
+import 'scan_invoice_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -58,6 +59,18 @@ class HomeScreen extends StatelessWidget {
                 ),
                 icon: const Icon(Icons.tune),
                 label: const Text('Ajuste de inventario'),
+                style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: 260,
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => ScanInvoiceScreen(user: user)),
+                ),
+                icon: const Icon(Icons.document_scanner),
+                label: const Text('Escanear factura (IA)'),
                 style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
               ),
             ),

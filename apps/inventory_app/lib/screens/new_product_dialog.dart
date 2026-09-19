@@ -14,19 +14,47 @@ Future<Product?> showNewProductDialog(
   );
 }
 
+/// Variante usada tras el escaneo de facturas con IA: no hay código de barras
+/// todavía, pero sí un nombre/costo sugeridos a partir de lo extraído.
+Future<Product?> showNewProductDialogWithDefaults(
+  BuildContext context, {
+  required ApiClient api,
+  String? nombreSugerido,
+  double? costoSugerido,
+}) {
+  return showDialog<Product>(
+    context: context,
+    builder: (context) => _NewProductDialog(
+      api: api,
+      barcode: null,
+      nombreSugerido: nombreSugerido,
+      costoSugerido: costoSugerido,
+    ),
+  );
+}
+
 class _NewProductDialog extends StatefulWidget {
   final ApiClient api;
-  final String barcode;
+  final String? barcode;
+  final String? nombreSugerido;
+  final double? costoSugerido;
 
-  const _NewProductDialog({required this.api, required this.barcode});
+  const _NewProductDialog({
+    required this.api,
+    required this.barcode,
+    this.nombreSugerido,
+    this.costoSugerido,
+  });
 
   @override
   State<_NewProductDialog> createState() => _NewProductDialogState();
 }
 
 class _NewProductDialogState extends State<_NewProductDialog> {
-  final _nombreController = TextEditingController();
-  final _costoController = TextEditingController();
+  late final _nombreController = TextEditingController(text: widget.nombreSugerido ?? '');
+  late final _costoController = TextEditingController(
+    text: widget.costoSugerido != null ? widget.costoSugerido!.toStringAsFixed(0) : '',
+  );
   bool _submitting = false;
   String? _error;
 
@@ -69,7 +97,7 @@ class _NewProductDialogState extends State<_NewProductDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Código: ${widget.barcode}'),
+          if (widget.barcode != null) Text('Código: ${widget.barcode}'),
           TextField(
             controller: _nombreController,
             decoration: const InputDecoration(labelText: 'Nombre'),

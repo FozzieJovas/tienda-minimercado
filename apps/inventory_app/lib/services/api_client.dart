@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../models/app_user.dart';
 import '../models/product.dart';
+import '../models/scan_result.dart';
 import 'settings_service.dart';
 
 class ApiException implements Exception {
@@ -91,6 +93,7 @@ class ApiClient {
     required List<({String productId, double cantidad, double costoUnitario})> items,
     String? numeroFactura,
     String? creadoPorId,
+    String? scanId,
   }) async {
     final uri = await _uri('/purchases');
     final response = await http
@@ -100,6 +103,7 @@ class ApiClient {
           body: jsonEncode({
             if (numeroFactura != null) 'numeroFactura': numeroFactura,
             if (creadoPorId != null) 'creadoPorId': creadoPorId,
+            if (scanId != null) 'scanId': scanId,
             'items': items
                 .map((i) => {
                       'productId': i.productId,
@@ -111,6 +115,17 @@ class ApiClient {
         )
         .timeout(const Duration(seconds: 10));
     _decodeObject(response);
+  }
+
+  Future<ScanResult> scanInvoice(List<File> fotos) async {
+    final uri = await _uri('/purchases/scan');
+    final request = http.MultipartRequest('POST', uri);
+    for (final foto in fotos) {
+      request.files.add(await http.MultipartFile.fromPath('fotos', foto.path));
+    }
+    final streamed = await request.send().timeout(const Duration(seconds: 45));
+    final response = await http.Response.fromStream(streamed);
+    return ScanResult.fromJson(_decodeObject(response));
   }
 
   Future<Product> ajustarStock({
