@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../models/app_user.dart';
 import '../models/cart.dart';
 import '../models/product.dart';
 import '../services/api_client.dart';
+import '../services/session_service.dart';
 import '../services/settings_service.dart';
 import '../services/printer_service.dart';
+import 'cash_session_screen.dart';
 import 'checkout_dialog.dart';
 import 'sales_today_screen.dart';
 import 'settings_screen.dart';
@@ -13,7 +16,18 @@ import 'settings_screen.dart';
 final _currency = NumberFormat.currency(locale: 'es_CO', symbol: '\$', decimalDigits: 0);
 
 class PosScreen extends StatefulWidget {
-  const PosScreen({super.key});
+  final AppUser user;
+  final String sessionId;
+  final VoidCallback onLoggedOut;
+  final VoidCallback onSessionClosed;
+
+  const PosScreen({
+    super.key,
+    required this.user,
+    required this.sessionId,
+    required this.onLoggedOut,
+    required this.onSessionClosed,
+  });
 
   @override
   State<PosScreen> createState() => _PosScreenState();
@@ -23,6 +37,7 @@ class _PosScreenState extends State<PosScreen> {
   final _api = ApiClient(SettingsService());
   final _printerService = PrinterService();
   final _settings = SettingsService();
+  final _sessionService = SessionService();
   final _searchController = TextEditingController();
 
   List<Product> _products = [];
@@ -55,7 +70,13 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Future<void> _cobrar(Cart cart) async {
-    final sale = await showCheckoutDialog(context, cart: cart, api: _api);
+    final sale = await showCheckoutDialog(
+      context,
+      cart: cart,
+      api: _api,
+      usuarioId: widget.user.id,
+      sesionId: widget.sessionId,
+    );
     if (sale == null) return;
 
     cart.clear();
@@ -91,8 +112,26 @@ class _PosScreenState extends State<PosScreen> {
       create: (_) => Cart(),
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Punto de venta'),
+          title: Text('Punto de venta — ${widget.user.nombre}'),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.point_of_sale),
+              tooltip: 'Turno de caja',
+              onPressed: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => CashSessionScreen(
+                      user: widget.user,
+                      sessionId: widget.sessionId,
+                      onClosed: () {
+                        Navigator.of(context).pop();
+                        widget.onSessionClosed();
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
             IconButton(
               icon: const Icon(Icons.bar_chart),
               tooltip: 'Ventas de hoy',
@@ -108,6 +147,14 @@ class _PosScreenState extends State<PosScreen> {
                   MaterialPageRoute(builder: (_) => const SettingsScreen()),
                 );
                 _loadProducts();
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.logout),
+              tooltip: 'Cerrar sesión',
+              onPressed: () async {
+                await _sessionService.logout();
+                widget.onLoggedOut();
               },
             ),
           ],
