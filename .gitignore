@@ -17,5 +17,11 @@ apps/server/data/backups/*
 **/.flutter-plugins
 **/.flutter-plugins-dependencies
 
+# Android (Flutter's android/ folders and the native pos_app_legacy project)
+**/local.properties
+**/.gradle/
+**/*.iml
+**/.idea/
+
 .DS_Store
 Thumbs.db
