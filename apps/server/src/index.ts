@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import {
@@ -45,6 +46,9 @@ async function main() {
   app.setSerializerCompiler(serializerCompiler);
 
   await app.register(cors, { origin: true });
+  await app.register(multipart, {
+    limits: { fileSize: 15 * 1024 * 1024, files: 5 },
+  });
 
   await app.register(swagger, {
     openapi: { info: { title: "Tienda API", version: "0.1.0" } },

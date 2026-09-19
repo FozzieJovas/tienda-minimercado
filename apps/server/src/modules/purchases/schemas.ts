@@ -11,6 +11,9 @@ export const purchaseCreateSchema = z.object({
   numeroFactura: z.string().optional(),
   fecha: z.string().optional(),
   creadoPorId: z.string().optional(),
+  // Si la compra viene de un escaneo con IA (POST /purchases/scan), referencia esa carpeta
+  // temporal de fotos para adjuntarlas al registro final.
+  scanId: z.string().optional(),
   items: z.array(purchaseItemInputSchema).min(1),
 });
 

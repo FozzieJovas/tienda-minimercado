@@ -1,9 +1,15 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
+import { randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 import { prisma } from "../../db/client.js";
 import { purchaseCreateSchema } from "./schemas.js";
 import { calcularPrecioVenta, resolveMargin } from "../products/pricing.js";
+import { PURCHASE_UPLOADS_DIR } from "../../config/paths.js";
+import { extractInvoiceFromImages } from "../../ai/geminiClient.js";
+import { matchProduct } from "./matching.js";
 
 export const purchaseRoutes: FastifyPluginAsync = async (app) => {
   const server = app.withTypeProvider<ZodTypeProvider>();
@@ -28,11 +34,80 @@ export const purchaseRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
+  server.post("/purchases/scan", { schema: { tags: ["purchases"] } }, async (request, reply) => {
+    const parts = request.files();
+    const scanId = randomUUID();
+    const scanDir = path.join(PURCHASE_UPLOADS_DIR, `scan-${scanId}`);
+    await fs.mkdir(scanDir, { recursive: true });
+
+    const images: { base64: string; mimeType: string }[] = [];
+    let index = 0;
+    for await (const part of parts) {
+      const buffer = await part.toBuffer();
+      const ext = path.extname(part.filename) || ".jpg";
+      const filePath = path.join(scanDir, `foto${++index}${ext}`);
+      await fs.writeFile(filePath, buffer);
+      images.push({ base64: buffer.toString("base64"), mimeType: part.mimetype });
+    }
+
+    if (images.length === 0) {
+      return reply.code(400).send({ error: "No se recibió ninguna foto" });
+    }
+
+    let extraction;
+    try {
+      extraction = await extractInvoiceFromImages(images);
+    } catch (err) {
+      request.log.error(err);
+      return reply.code(502).send({
+        error: "No se pudo interpretar la factura con IA. Puedes cargarla manualmente.",
+      });
+    }
+
+    const catalogo = await prisma.product.findMany({ where: { activo: true }, include: { categoria: true } });
+
+    const items = await Promise.all(
+      extraction.items.map(async (item) => {
+        const { product, confianza } = matchProduct(item.descripcion, catalogo);
+        let precioVentaSugerido: number | null = null;
+        if (product) {
+          const margen = await resolveMargin({
+            margenOverride: product.margenOverride,
+            categoriaMargenDefault: product.categoria?.margenDefault,
+          });
+          precioVentaSugerido = calcularPrecioVenta(item.precio_unitario, margen);
+        }
+        return {
+          descripcionCruda: item.descripcion,
+          cantidad: item.cantidad,
+          costoUnitario: item.precio_unitario,
+          subtotal: item.subtotal ?? Math.round(item.precio_unitario * item.cantidad * 100) / 100,
+          productId: product?.id ?? null,
+          nombreProductoSugerido: product?.nombre ?? null,
+          precioVentaSugerido,
+          confianzaMatch: confianza,
+        };
+      })
+    );
+
+    return {
+      scanId,
+      fotos: images.map((_, i) => `uploads/purchases/scan-${scanId}/foto${i + 1}`),
+      proveedorNombre: extraction.proveedor_nombre ?? null,
+      proveedorNit: extraction.proveedor_nit ?? null,
+      numeroFactura: extraction.numero_factura ?? null,
+      fecha: extraction.fecha ?? null,
+      total: extraction.total ?? null,
+      confianzaGeneral: extraction.confianza_general,
+      items,
+    };
+  });
+
   server.post(
     "/purchases",
     { schema: { tags: ["purchases"], body: purchaseCreateSchema } },
     async (request, reply) => {
-      const { items, supplierId, numeroFactura, fecha, creadoPorId } = request.body;
+      const { items, supplierId, numeroFactura, fecha, creadoPorId, scanId } = request.body;
 
       const products = await prisma.product.findMany({
         where: { id: { in: items.map((i) => i.productId) } },
@@ -102,7 +177,25 @@ export const purchaseRoutes: FastifyPluginAsync = async (app) => {
         return created;
       });
 
-      return reply.code(201).send(purchase);
+      let finalPurchase = purchase;
+      if (scanId) {
+        const scanDir = path.join(PURCHASE_UPLOADS_DIR, `scan-${scanId}`);
+        const finalDir = path.join(PURCHASE_UPLOADS_DIR, purchase.id);
+        try {
+          await fs.rename(scanDir, finalDir);
+          const archivos = await fs.readdir(finalDir);
+          const fotos = archivos.map((nombre) => `uploads/purchases/${purchase.id}/${nombre}`);
+          finalPurchase = await prisma.purchaseInvoice.update({
+            where: { id: purchase.id },
+            data: { fotos: JSON.stringify(fotos) },
+            include: { items: { include: { product: true } }, supplier: true },
+          });
+        } catch (err) {
+          request.log.warn({ err }, "No se pudieron adjuntar las fotos del escaneo a la compra");
+        }
+      }
+
+      return reply.code(201).send(finalPurchase);
     }
   );
 };
