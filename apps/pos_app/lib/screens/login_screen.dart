@@ -3,6 +3,7 @@ import '../models/app_user.dart';
 import '../services/api_client.dart';
 import '../services/session_service.dart';
 import '../services/settings_service.dart';
+import 'settings_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final void Function(AppUser user) onLoggedIn;
@@ -42,6 +43,18 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text(''),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Configuración',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            ),
+          ),
+        ],
+      ),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 320),
