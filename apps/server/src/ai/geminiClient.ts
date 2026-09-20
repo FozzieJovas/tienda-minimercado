@@ -32,7 +32,7 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
 export async function extractInvoiceFromImages(
   images: { base64: string; mimeType: string }[]
 ): Promise<ExtractedInvoice> {
-  const model = process.env.GEMINI_MODEL ?? "gemini-flash-latest";
+  const model = process.env.GEMINI_MODEL ?? "gemini-flash-lite-latest";
   const ai = getClient();
 
   const parts = [
