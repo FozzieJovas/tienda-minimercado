@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import '../models/app_user.dart';
 import '../models/product.dart';
 import '../models/scan_result.dart';
@@ -121,7 +122,14 @@ class ApiClient {
     final uri = await _uri('/purchases/scan');
     final request = http.MultipartRequest('POST', uri);
     for (final foto in fotos) {
-      request.files.add(await http.MultipartFile.fromPath('fotos', foto.path));
+      // Sin especificar contentType, el paquete http sube el archivo como
+      // application/octet-stream (binario genérico) en vez de imagen, y Gemini
+      // recibe bytes que no puede interpretar como foto -- así no lee nada, sin dar error.
+      request.files.add(await http.MultipartFile.fromPath(
+        'fotos',
+        foto.path,
+        contentType: MediaType('image', 'jpeg'),
+      ));
     }
     final streamed = await request.send().timeout(const Duration(seconds: 45));
     final response = await http.Response.fromStream(streamed);

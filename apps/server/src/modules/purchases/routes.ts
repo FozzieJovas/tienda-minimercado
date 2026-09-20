@@ -47,7 +47,11 @@ export const purchaseRoutes: FastifyPluginAsync = async (app) => {
       const ext = path.extname(part.filename) || ".jpg";
       const filePath = path.join(scanDir, `foto${++index}${ext}`);
       await fs.writeFile(filePath, buffer);
-      images.push({ base64: buffer.toString("base64"), mimeType: part.mimetype });
+      // Salvaguarda: si el cliente sube el archivo sin indicar un content-type de imagen
+      // (p. ej. application/octet-stream por defecto), Gemini no puede leerlo como foto.
+      // Como este endpoint solo acepta fotos, forzamos un mimetype de imagen razonable.
+      const mimeType = part.mimetype.startsWith("image/") ? part.mimetype : "image/jpeg";
+      images.push({ base64: buffer.toString("base64"), mimeType });
     }
 
     if (images.length === 0) {
