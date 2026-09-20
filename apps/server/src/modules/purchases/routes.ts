@@ -63,6 +63,9 @@ export const purchaseRoutes: FastifyPluginAsync = async (app) => {
         error: "No se pudo interpretar la factura con IA. Puedes cargarla manualmente.",
       });
     }
+    // Se deja este log siempre (no solo en error) porque un resultado "exitoso" con
+    // items vacíos es indistinguible de un fallo real sin ver qué devolvió Gemini.
+    request.log.info({ extraction }, "Extracción de factura con IA");
 
     const catalogo = await prisma.product.findMany({ where: { activo: true }, include: { categoria: true } });
 
