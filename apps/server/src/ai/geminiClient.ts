@@ -29,7 +29,11 @@ export async function extractInvoiceFromImages(
     contents: createUserContent(parts),
     config: {
       responseMimeType: "application/json",
-      responseSchema: extractInvoiceJsonSchema,
+      // responseSchema espera el tipo Schema propio del SDK (Type.OBJECT, Type.STRING...
+      // en mayúsculas); nuestro esquema es JSON Schema estándar, así que va en
+      // responseJsonSchema. Usar el campo equivocado no da error: Gemini simplemente
+      // ignora el esquema mal tipado y devuelve una extracción vacía en vez de fallar.
+      responseJsonSchema: extractInvoiceJsonSchema,
     },
   });
 
