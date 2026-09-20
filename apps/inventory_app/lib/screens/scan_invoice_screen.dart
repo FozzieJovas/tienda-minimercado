@@ -38,7 +38,8 @@ class _ScanInvoiceScreenState extends State<ScanInvoiceScreen> {
 
   double get _total => (_result?.items ?? []).fold(0, (sum, i) => sum + i.cantidad * i.costoUnitario);
 
-  bool get _todoResuelto => (_result?.items ?? []).every((i) => i.productId != null);
+  bool get _todoResuelto =>
+      (_result?.items ?? []).isNotEmpty && _result!.items.every((i) => i.productId != null);
 
   Future<void> _tomarFoto() async {
     final foto = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85);
@@ -187,13 +188,39 @@ class _ScanInvoiceScreenState extends State<ScanInvoiceScreen> {
             children: [
               if (result.proveedorNombre != null) Text('Proveedor: ${result.proveedorNombre}'),
               if (result.numeroFactura != null) Text('Factura: ${result.numeroFactura}'),
+              Text('Confianza general de la IA: ${result.confianzaGeneral}'),
               const SizedBox(height: 8),
-              Text(
-                'Revisa cada ítem antes de confirmar. La confianza indica qué tan segura está la IA del emparejamiento con tu catálogo.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const Divider(height: 24),
-              for (final item in result.items) _buildItemCard(item),
+              if (result.items.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, size: 40, color: Colors.orange),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'La IA no logró leer ningún ítem en esta foto. Intenta con más luz, '
+                        'más cerca del texto, o encuadrando solo la factura.',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton(
+                        onPressed: () => setState(() {
+                          _result = null;
+                          _fotos.clear();
+                        }),
+                        child: const Text('Volver a tomar fotos'),
+                      ),
+                    ],
+                  ),
+                )
+              else ...[
+                Text(
+                  'Revisa cada ítem antes de confirmar. La confianza indica qué tan segura está la IA del emparejamiento con tu catálogo.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const Divider(height: 24),
+                for (final item in result.items) _buildItemCard(item),
+              ],
             ],
           ),
         ),
