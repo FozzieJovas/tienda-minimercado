@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -39,26 +40,60 @@ class _PosScreenState extends State<PosScreen> {
   final _settings = SettingsService();
   final _sessionService = SessionService();
   final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
 
-  List<Product> _products = [];
+  List<Product> _favoritos = [];
+  List<Product> _searchResults = [];
   bool _loading = true;
   String? _error;
+  Timer? _debounce;
+
+  bool get _searching => _searchController.text.trim().isNotEmpty;
 
   @override
   void initState() {
     super.initState();
-    _loadProducts();
+    _loadFavoritos();
+    _searchController.addListener(_onSearchChanged);
   }
 
-  Future<void> _loadProducts() async {
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    _debounce?.cancel();
+    final query = _searchController.text.trim();
+    if (query.isEmpty) {
+      setState(() => _searchResults = []);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 300), () => _buscar(query));
+  }
+
+  Future<void> _buscar(String query) async {
+    try {
+      final results = await _api.fetchProducts(search: query);
+      if (mounted) setState(() => _searchResults = results);
+    } catch (_) {
+      // Sin conexión momentánea: se deja la última lista visible.
+    }
+  }
+
+  Future<void> _loadFavoritos() async {
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final products = await _api.fetchProducts(search: _searchController.text);
+      final products = await _api.fetchProducts(favorito: true);
       setState(() {
-        _products = products;
+        _favoritos = products;
         _loading = false;
       });
     } catch (_) {
@@ -67,6 +102,35 @@ class _PosScreenState extends State<PosScreen> {
         _loading = false;
       });
     }
+  }
+
+  void _refocusSearch() {
+    if (!mounted) return;
+    _searchController.clear();
+    FocusScope.of(context).requestFocus(_searchFocusNode);
+  }
+
+  /// Se dispara al presionar Enter en el buscador — es lo que envía un lector
+  /// de código de barras tras leer una etiqueta. Si hay coincidencia exacta de
+  /// código de barras, agrega el producto directo al carrito; si no, deja el
+  /// texto como búsqueda por nombre (ya en curso por el debounce de arriba).
+  Future<void> _onSearchSubmitted(Cart cart, String value) async {
+    final code = value.trim();
+    if (code.isEmpty) return;
+    try {
+      final product = await _api.findByBarcode(code);
+      if (product != null) {
+        cart.addProduct(product);
+        _refocusSearch();
+      }
+    } catch (_) {
+      // Sin conexión: no se puede resolver por código de barras, se deja la búsqueda por nombre.
+    }
+  }
+
+  void _agregarAlCarrito(Cart cart, Product product) {
+    cart.addProduct(product);
+    _refocusSearch();
   }
 
   Future<void> _cobrar(Cart cart) async {
@@ -80,7 +144,8 @@ class _PosScreenState extends State<PosScreen> {
     if (sale == null) return;
 
     cart.clear();
-    await _loadProducts();
+    await _loadFavoritos();
+    _refocusSearch();
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -146,7 +211,8 @@ class _PosScreenState extends State<PosScreen> {
                 await Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const SettingsScreen()),
                 );
-                _loadProducts();
+                _loadFavoritos();
+                _refocusSearch();
               },
             ),
             IconButton(
@@ -159,40 +225,45 @@ class _PosScreenState extends State<PosScreen> {
             ),
           ],
         ),
-        body: Row(
-          children: [
-            Expanded(
-              flex: 3,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: TextField(
-                      controller: _searchController,
-                      decoration: const InputDecoration(
-                        prefixIcon: Icon(Icons.search),
-                        hintText: 'Buscar por nombre o código de barras',
-                        border: OutlineInputBorder(),
+        body: Builder(builder: (context) {
+          final cart = context.watch<Cart>();
+          return Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: TextField(
+                        controller: _searchController,
+                        focusNode: _searchFocusNode,
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.search),
+                          hintText: 'Escanea o busca por nombre/código',
+                          border: OutlineInputBorder(),
+                        ),
+                        onSubmitted: (value) => _onSearchSubmitted(cart, value),
                       ),
-                      onSubmitted: (_) => _loadProducts(),
                     ),
-                  ),
-                  Expanded(child: _buildProductList()),
-                ],
+                    Expanded(child: _buildProductList(cart)),
+                  ],
+                ),
               ),
-            ),
-            const VerticalDivider(width: 1),
-            Expanded(
-              flex: 2,
-              child: _CartPanel(onCobrar: _cobrar),
-            ),
-          ],
-        ),
+              const VerticalDivider(width: 1),
+              Expanded(
+                flex: 2,
+                child: _CartPanel(onCobrar: _cobrar),
+              ),
+            ],
+          );
+        }),
       ),
     );
   }
 
-  Widget _buildProductList() {
+  Widget _buildProductList(Cart cart) {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(
@@ -201,29 +272,34 @@ class _PosScreenState extends State<PosScreen> {
           children: [
             Text(_error!, textAlign: TextAlign.center),
             const SizedBox(height: 8),
-            ElevatedButton(onPressed: _loadProducts, child: const Text('Reintentar')),
+            ElevatedButton(onPressed: _loadFavoritos, child: const Text('Reintentar')),
           ],
         ),
       );
     }
-    if (_products.isEmpty) {
-      return const Center(child: Text('Sin productos'));
-    }
-    return Builder(builder: (context) {
-      final cart = context.watch<Cart>();
-      return ListView.builder(
-        itemCount: _products.length,
-        itemBuilder: (context, index) {
-          final product = _products[index];
-          return ListTile(
-            title: Text(product.nombre),
-            subtitle: Text('Stock: ${product.stockActual.toStringAsFixed(0)}'),
-            trailing: Text(_currency.format(product.precioVenta)),
-            onTap: () => cart.addProduct(product),
-          );
-        },
+    final items = _searching ? _searchResults : _favoritos;
+    if (items.isEmpty) {
+      return Center(
+        child: Text(
+          _searching
+              ? 'Sin resultados'
+              : 'No hay productos favoritos.\nMárcalos desde Inventario para verlos aquí.',
+          textAlign: TextAlign.center,
+        ),
       );
-    });
+    }
+    return ListView.builder(
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final product = items[index];
+        return ListTile(
+          title: Text(product.nombre),
+          subtitle: Text('Stock: ${product.stockActual.toStringAsFixed(0)}'),
+          trailing: Text(_currency.format(product.precioVenta)),
+          onTap: () => _agregarAlCarrito(cart, product),
+        );
+      },
+    );
   }
 }
 

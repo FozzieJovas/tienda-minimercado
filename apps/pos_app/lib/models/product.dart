@@ -4,6 +4,7 @@ class Product {
   final String? barcode;
   final double precioVenta;
   final double stockActual;
+  final bool favorito;
 
   Product({
     required this.id,
@@ -11,6 +12,7 @@ class Product {
     required this.barcode,
     required this.precioVenta,
     required this.stockActual,
+    this.favorito = false,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -20,6 +22,7 @@ class Product {
       barcode: json['barcode'] as String?,
       precioVenta: (json['precioVenta'] as num).toDouble(),
       stockActual: (json['stockActual'] as num).toDouble(),
+      favorito: json['favorito'] as bool? ?? false,
     );
   }
 }

@@ -7,6 +7,7 @@ import '../services/settings_service.dart';
 import 'barcode_scanner_screen.dart';
 import 'new_product_dialog.dart';
 import 'quantity_cost_dialog.dart';
+import 'select_product_dialog.dart';
 
 final _currency = NumberFormat.currency(locale: 'es_CO', symbol: '\$', decimalDigits: 0);
 
@@ -58,6 +59,18 @@ class _ReceptionScreenState extends State<ReceptionScreen> {
     }
 
     if (!mounted) return;
+    await _agregarItem(product);
+  }
+
+  /// Para productos sin código de barras (o cuando no se tiene a mano el lector):
+  /// buscar por nombre en el catálogo en vez de escanear.
+  Future<void> _buscarManual() async {
+    final product = await showSelectProductDialog(context, api: _api);
+    if (product == null || !mounted) return;
+    await _agregarItem(product);
+  }
+
+  Future<void> _agregarItem(Product product) async {
     final result = await showQuantityCostDialog(
       context,
       productName: product.nombre,
@@ -66,7 +79,7 @@ class _ReceptionScreenState extends State<ReceptionScreen> {
     if (result == null) return;
 
     setState(() {
-      _items.add(ReceptionItem(product: product!, cantidad: result.cantidad, costoUnitario: result.costoUnitario));
+      _items.add(ReceptionItem(product: product, cantidad: result.cantidad, costoUnitario: result.costoUnitario));
     });
   }
 
@@ -149,14 +162,23 @@ class _ReceptionScreenState extends State<ReceptionScreen> {
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: ElevatedButton(
-                        onPressed: _items.isEmpty || _submitting ? null : _guardarCompra,
-                        child: _submitting
-                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Text('Guardar compra'),
+                      child: OutlinedButton.icon(
+                        onPressed: _buscarManual,
+                        icon: const Icon(Icons.search),
+                        label: const Text('Buscar por nombre'),
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _items.isEmpty || _submitting ? null : _guardarCompra,
+                    child: _submitting
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Text('Guardar compra'),
+                  ),
                 ),
               ],
             ),

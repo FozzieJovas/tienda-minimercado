@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/app_user.dart';
 import '../services/session_service.dart';
 import 'adjustment_screen.dart';
+import 'margins_screen.dart';
 import 'reception_screen.dart';
 import 'scan_invoice_screen.dart';
 import 'settings_screen.dart';
@@ -71,6 +72,18 @@ class HomeScreen extends StatelessWidget {
                 ),
                 icon: const Icon(Icons.document_scanner),
                 label: const Text('Escanear factura (IA)'),
+                style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: 260,
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const MarginsScreen()),
+                ),
+                icon: const Icon(Icons.sell_outlined),
+                label: const Text('Precios y catálogo'),
                 style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
               ),
             ),

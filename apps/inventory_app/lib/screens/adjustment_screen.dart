@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../models/product.dart';
 import '../services/api_client.dart';
 import '../services/settings_service.dart';
 import 'barcode_scanner_screen.dart';
+import 'select_product_dialog.dart';
 
 class AdjustmentScreen extends StatefulWidget {
   const AdjustmentScreen({super.key});
@@ -20,20 +22,38 @@ class _AdjustmentScreenState extends State<AdjustmentScreen> {
     );
     if (code == null || !mounted) return;
 
+    Product? product;
     try {
-      final product = await _api.findByBarcode(code);
-      if (!mounted) return;
-      if (product == null) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No existe ningún producto con ese código')));
-        return;
+      product = await _api.findByBarcode(code);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se pudo conectar con el servidor')));
       }
+      return;
+    }
+    if (!mounted) return;
+    if (product == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No existe ningún producto con ese código')));
+      return;
+    }
+    await _ajustar(product);
+  }
 
-      final result = await showDialog<_AdjustmentInput>(
-        context: context,
-        builder: (context) => _AdjustmentDialog(productName: product.nombre, stockActual: product.stockActual),
-      );
-      if (result == null) return;
+  /// Para productos sin código de barras: buscar por nombre en vez de escanear.
+  Future<void> _buscarManual() async {
+    final product = await showSelectProductDialog(context, api: _api);
+    if (product == null || !mounted) return;
+    await _ajustar(product);
+  }
 
+  Future<void> _ajustar(Product product) async {
+    final result = await showDialog<_AdjustmentInput>(
+      context: context,
+      builder: (context) => _AdjustmentDialog(productName: product.nombre, stockActual: product.stockActual),
+    );
+    if (result == null) return;
+
+    try {
       await _api.ajustarStock(
         productId: product.id,
         cantidadDelta: result.cantidadDelta,
@@ -57,10 +77,21 @@ class _AdjustmentScreenState extends State<AdjustmentScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Ajuste de inventario')),
       body: Center(
-        child: ElevatedButton.icon(
-          onPressed: _escanear,
-          icon: const Icon(Icons.qr_code_scanner),
-          label: const Text('Escanear producto'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ElevatedButton.icon(
+              onPressed: _escanear,
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('Escanear producto'),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _buscarManual,
+              icon: const Icon(Icons.search),
+              label: const Text('Buscar por nombre'),
+            ),
+          ],
         ),
       ),
     );

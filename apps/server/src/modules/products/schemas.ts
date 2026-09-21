@@ -10,9 +10,14 @@ export const productCreateSchema = z.object({
   margenOverride: z.number().min(-1).optional(),
   stockActual: z.number().default(0),
   stockMinimo: z.number().nonnegative().default(0),
+  favorito: z.boolean().default(false),
 });
 
-export const productUpdateSchema = productCreateSchema.partial();
+export const productUpdateSchema = productCreateSchema.partial().extend({
+  // A diferencia de create, en update `null` es un valor válido: significa
+  // "quitar el override y volver a usar el margen de categoría/global".
+  margenOverride: z.number().min(-1).nullable().optional(),
+});
 
 export const productParamsSchema = z.object({
   id: z.string(),

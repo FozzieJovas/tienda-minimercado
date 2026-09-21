@@ -54,16 +54,37 @@ class ApiClient {
   }
 
   Future<List<Product>> searchProducts(String query) async {
-    final uri = await _uri('/products?activo=true');
+    final base = await _uri('/products');
+    final params = <String, String>{'activo': 'true'};
+    if (query.trim().isNotEmpty) params['search'] = query.trim();
+    final uri = base.replace(queryParameters: params);
     final response = await http.get(uri).timeout(const Duration(seconds: 10));
     if (response.statusCode >= 400) throw ApiException('No se pudo cargar el catálogo');
     final list = jsonDecode(response.body) as List<dynamic>;
-    final products = list.map((e) => Product.fromJson(e as Map<String, dynamic>)).toList();
-    final q = query.trim().toLowerCase();
-    if (q.isEmpty) return products;
-    return products
-        .where((p) => p.nombre.toLowerCase().contains(q) || (p.barcode?.contains(q) ?? false))
-        .toList();
+    return list.map((e) => Product.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<Product> updateProduct(String id, Map<String, dynamic> data) async {
+    final uri = await _uri('/products/$id');
+    final response = await http
+        .patch(uri, headers: {'Content-Type': 'application/json'}, body: jsonEncode(data))
+        .timeout(const Duration(seconds: 10));
+    return Product.fromJson(_decodeObject(response));
+  }
+
+  Future<Map<String, String>> fetchSettings() async {
+    final uri = await _uri('/settings');
+    final response = await http.get(uri).timeout(const Duration(seconds: 10));
+    final map = jsonDecode(response.body) as Map<String, dynamic>;
+    return map.map((key, value) => MapEntry(key, value.toString()));
+  }
+
+  Future<void> updateSetting(String clave, String valor) async {
+    final uri = await _uri('/settings/$clave');
+    final response = await http
+        .put(uri, headers: {'Content-Type': 'application/json'}, body: jsonEncode({'valor': valor}))
+        .timeout(const Duration(seconds: 10));
+    _decodeObject(response);
   }
 
   Future<Product> createProduct({

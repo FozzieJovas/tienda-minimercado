@@ -5,6 +5,8 @@ class Product {
   final double costoActual;
   final double precioVenta;
   final double stockActual;
+  final double? margenOverride;
+  final bool favorito;
 
   Product({
     required this.id,
@@ -13,6 +15,8 @@ class Product {
     required this.costoActual,
     required this.precioVenta,
     required this.stockActual,
+    this.margenOverride,
+    this.favorito = false,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -23,6 +27,8 @@ class Product {
       costoActual: (json['costoActual'] as num).toDouble(),
       precioVenta: (json['precioVenta'] as num).toDouble(),
       stockActual: (json['stockActual'] as num).toDouble(),
+      margenOverride: (json['margenOverride'] as num?)?.toDouble(),
+      favorito: json['favorito'] as bool? ?? false,
     );
   }
 }

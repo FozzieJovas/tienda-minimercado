@@ -35,23 +35,25 @@ class ApiClient {
     return body as Map<String, dynamic>;
   }
 
-  Future<List<Product>> fetchProducts({String? search}) async {
-    final uri = await _uri('/products?activo=true');
+  Future<List<Product>> fetchProducts({String? search, bool? favorito}) async {
+    final base = await _uri('/products');
+    final params = <String, String>{'activo': 'true'};
+    if (search != null && search.trim().isNotEmpty) params['search'] = search.trim();
+    if (favorito == true) params['favorito'] = 'true';
+    final uri = base.replace(queryParameters: params);
     final response = await http.get(uri).timeout(const Duration(seconds: 10));
     if (response.statusCode >= 400) {
       throw ApiException('No se pudo cargar el catálogo (${response.statusCode})');
     }
     final list = jsonDecode(response.body) as List<dynamic>;
-    final products = list
-        .map((e) => Product.fromJson(e as Map<String, dynamic>))
-        .toList();
-    if (search == null || search.trim().isEmpty) return products;
-    final query = search.trim().toLowerCase();
-    return products
-        .where((p) =>
-            p.nombre.toLowerCase().contains(query) ||
-            (p.barcode?.contains(query) ?? false))
-        .toList();
+    return list.map((e) => Product.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<Product?> findByBarcode(String barcode) async {
+    final uri = await _uri('/products/by-barcode/$barcode');
+    final response = await http.get(uri).timeout(const Duration(seconds: 10));
+    if (response.statusCode == 404) return null;
+    return Product.fromJson(_decodeObject(response));
   }
 
   Future<SaleResult> createSale({

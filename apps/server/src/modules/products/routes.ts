@@ -13,13 +13,24 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
     {
       schema: {
         tags: ["products"],
-        querystring: z.object({ activo: z.coerce.boolean().optional() }),
+        querystring: z.object({
+          activo: z.coerce.boolean().optional(),
+          favorito: z.coerce.boolean().optional(),
+          search: z.string().optional(),
+        }),
       },
     },
     async (request) => {
-      const { activo } = request.query;
+      const { activo, favorito, search } = request.query;
+      const texto = search?.trim();
       return prisma.product.findMany({
-        where: activo === undefined ? undefined : { activo },
+        where: {
+          ...(activo === undefined ? {} : { activo }),
+          ...(favorito === undefined ? {} : { favorito }),
+          ...(texto
+            ? { OR: [{ nombre: { contains: texto } }, { barcode: { contains: texto } }] }
+            : {}),
+        },
         include: { categoria: true },
         orderBy: { nombre: "asc" },
       });
@@ -87,7 +98,9 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
         ? await prisma.category.findUnique({ where: { id: categoriaId } })
         : null;
       const costoActual = data.costoActual ?? existing.costoActual;
-      const margenOverride = data.margenOverride ?? existing.margenOverride;
+      // "margenOverride" en null es explícito ("quitar el override"), distinto de
+      // no enviarlo (mantener el actual) -- por eso no se puede usar `??` aquí.
+      const margenOverride = "margenOverride" in data ? data.margenOverride : existing.margenOverride;
       const margen = await resolveMargin({
         margenOverride,
         categoriaMargenDefault: categoria?.margenDefault,

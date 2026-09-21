@@ -22,6 +22,11 @@ export async function resolveMargin(params: {
   return DEFAULT_GLOBAL_MARGIN;
 }
 
+// Precios en pesos colombianos no manejan centavos; se redondea siempre hacia
+// arriba a la centena (ej. 2475 -> 2500) para que el precio final sea "redondo".
+const REDONDEO = 100;
+
 export function calcularPrecioVenta(costo: number, margen: number): number {
-  return Math.round(costo * (1 + margen) * 100) / 100;
+  const crudo = costo * (1 + margen);
+  return Math.ceil(crudo / REDONDEO) * REDONDEO;
 }
