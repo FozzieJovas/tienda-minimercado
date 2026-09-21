@@ -31,7 +31,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
         // El paquete mobile_scanner oculta el detalle real del error en modo
         // release (siempre muestra "An unexpected error occurred"); esta app
         // es interna, así que conviene ver siempre la causa real.
-        errorBuilder: (context, error, child) => _CameraErrorView(error: error),
+        errorBuilder: (context, error) => _CameraErrorView(error: error),
       ),
     );
   }
