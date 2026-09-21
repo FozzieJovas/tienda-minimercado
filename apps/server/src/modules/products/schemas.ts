@@ -14,8 +14,11 @@ export const productCreateSchema = z.object({
 });
 
 export const productUpdateSchema = productCreateSchema.partial().extend({
-  // A diferencia de create, en update `null` es un valor válido: significa
-  // "quitar el override y volver a usar el margen de categoría/global".
+  // A diferencia de create, en update `null` es un valor válido para estos
+  // campos: significa "quitarlo" (dejar el producto sin código de barras,
+  // sin categoría, o sin margen propio -- volviendo al de categoría/global).
+  barcode: z.string().nullable().optional(),
+  categoriaId: z.string().nullable().optional(),
   margenOverride: z.number().min(-1).nullable().optional(),
 });
 

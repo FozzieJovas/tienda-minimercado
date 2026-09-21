@@ -93,7 +93,8 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
       if (!existing) return reply.code(404).send({ error: "Producto no encontrado" });
 
       const data = request.body;
-      const categoriaId = data.categoriaId ?? existing.categoriaId;
+      // Mismo motivo que margenOverride abajo: null explícito es "quitar categoría".
+      const categoriaId = "categoriaId" in data ? data.categoriaId : existing.categoriaId;
       const categoria = categoriaId
         ? await prisma.category.findUnique({ where: { id: categoriaId } })
         : null;
