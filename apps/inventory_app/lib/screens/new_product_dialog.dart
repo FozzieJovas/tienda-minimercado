@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/product.dart';
 import '../services/api_client.dart';
+import 'barcode_scanner_screen.dart';
 
 Future<Product?> showNewProductDialog(
   BuildContext context, {
@@ -52,6 +53,7 @@ class _NewProductDialog extends StatefulWidget {
 
 class _NewProductDialogState extends State<_NewProductDialog> {
   late final _nombreController = TextEditingController(text: widget.nombreSugerido ?? '');
+  late final _barcodeController = TextEditingController(text: widget.barcode ?? '');
   late final _costoController = TextEditingController(
     text: widget.costoSugerido != null ? widget.costoSugerido!.toStringAsFixed(0) : '',
   );
@@ -70,9 +72,10 @@ class _NewProductDialogState extends State<_NewProductDialog> {
       _error = null;
     });
     try {
+      final barcode = _barcodeController.text.trim();
       final product = await widget.api.createProduct(
         nombre: nombre,
-        barcode: widget.barcode,
+        barcode: barcode.isEmpty ? null : barcode,
         costoActual: costo,
       );
       if (mounted) Navigator.of(context).pop(product);
@@ -97,11 +100,11 @@ class _NewProductDialogState extends State<_NewProductDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (widget.barcode != null) Text('Código: ${widget.barcode}'),
           TextField(
             controller: _nombreController,
             decoration: const InputDecoration(labelText: 'Nombre'),
           ),
+          BarcodeField(controller: _barcodeController),
           TextField(
             controller: _costoController,
             keyboardType: TextInputType.number,

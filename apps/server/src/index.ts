@@ -17,6 +17,7 @@ import { reportRoutes } from "./modules/reports/routes.js";
 import { authRoutes } from "./modules/auth/routes.js";
 import { userRoutes } from "./modules/users/routes.js";
 import { cashRegisterRoutes } from "./modules/cash-register/routes.js";
+import { Prisma } from "@prisma/client";
 import { prisma } from "./db/client.js";
 import { hashPassword } from "./modules/auth/password.js";
 
@@ -44,6 +45,18 @@ async function main() {
 
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
+
+  app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      const campo = String(error.meta?.target ?? "");
+      return reply.code(409).send({
+        error: campo.includes("barcode")
+          ? "Ese código de barras ya está asignado a otro producto"
+          : "Ya existe un registro con ese valor",
+      });
+    }
+    throw error;
+  });
 
   await app.register(cors, { origin: true });
   await app.register(multipart, {

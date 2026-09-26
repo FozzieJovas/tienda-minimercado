@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/product.dart';
 import '../services/api_client.dart';
+import 'barcode_scanner_screen.dart';
 
 Future<Product?> showProductEditDialog(
   BuildContext context, {
@@ -96,10 +97,7 @@ class _ProductEditDialogState extends State<_ProductEditDialog> {
               controller: _nombreController,
               decoration: const InputDecoration(labelText: 'Nombre'),
             ),
-            TextField(
-              controller: _barcodeController,
-              decoration: const InputDecoration(labelText: 'Código de barras (opcional)'),
-            ),
+            BarcodeField(controller: _barcodeController),
             TextField(
               controller: _costoController,
               keyboardType: TextInputType.number,

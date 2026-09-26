@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../services/api_client.dart';
+import 'barcode_scanner_screen.dart';
 
 Future<Product?> showSelectProductDialog(BuildContext context, {required ApiClient api}) {
   return showDialog<Product>(
@@ -39,6 +40,25 @@ class _SelectProductDialogState extends State<_SelectProductDialog> {
     _buscar('');
   }
 
+  Future<void> _escanear() async {
+    final code = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const BarcodeScannerScreen()),
+    );
+    if (code == null || !mounted) return;
+    try {
+      final product = await widget.api.findByBarcode(code);
+      if (!mounted) return;
+      if (product != null) {
+        Navigator.of(context).pop(product);
+        return;
+      }
+    } catch (_) {
+      // sin conexión: se deja el código como texto de búsqueda
+    }
+    _controller.text = code;
+    _buscar(code);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -50,7 +70,14 @@ class _SelectProductDialogState extends State<_SelectProductDialog> {
           children: [
             TextField(
               controller: _controller,
-              decoration: const InputDecoration(labelText: 'Buscar'),
+              decoration: InputDecoration(
+                labelText: 'Buscar',
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.qr_code_scanner),
+                  tooltip: 'Escanear código de barras',
+                  onPressed: _escanear,
+                ),
+              ),
               onChanged: _buscar,
             ),
             const SizedBox(height: 8),

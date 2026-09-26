@@ -37,6 +37,33 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
   }
 }
 
+/// Campo de código de barras con botón para llenarlo escaneando con la cámara.
+class BarcodeField extends StatelessWidget {
+  final TextEditingController controller;
+
+  const BarcodeField({super.key, required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      decoration: InputDecoration(
+        labelText: 'Código de barras (opcional)',
+        suffixIcon: IconButton(
+          icon: const Icon(Icons.qr_code_scanner),
+          tooltip: 'Escanear con la cámara',
+          onPressed: () async {
+            final code = await Navigator.of(context).push<String>(
+              MaterialPageRoute(builder: (_) => const BarcodeScannerScreen()),
+            );
+            if (code != null) controller.text = code;
+          },
+        ),
+      ),
+    );
+  }
+}
+
 class _CameraErrorView extends StatelessWidget {
   final MobileScannerException error;
 
