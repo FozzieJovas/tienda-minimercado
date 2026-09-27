@@ -93,6 +93,9 @@ class ApiClient {
     required double costoActual,
     double stockActual = 0,
     double stockMinimo = 0,
+    String? alias,
+    String? presentacionDeId,
+    double? factor,
   }) async {
     final uri = await _uri('/products');
     final response = await http
@@ -101,18 +104,27 @@ class ApiClient {
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'nombre': nombre,
-            if (barcode != null) 'barcode': barcode,
+            'barcode': ?barcode,
             'costoActual': costoActual,
             'stockActual': stockActual,
             'stockMinimo': stockMinimo,
+            'alias': ?alias,
+            'presentacionDeId': ?presentacionDeId,
+            'factor': ?factor,
           }),
         )
         .timeout(const Duration(seconds: 10));
     return Product.fromJson(_decodeObject(response));
   }
 
+  Future<Product> deleteAlias(String productId, String aliasId) async {
+    final uri = await _uri('/products/$productId/aliases/$aliasId');
+    final response = await http.delete(uri).timeout(const Duration(seconds: 10));
+    return Product.fromJson(_decodeObject(response));
+  }
+
   Future<void> registrarCompra({
-    required List<({String productId, double cantidad, double costoUnitario})> items,
+    required List<({String productId, double cantidad, double costoUnitario, String? descripcionCruda})> items,
     String? numeroFactura,
     String? creadoPorId,
     String? scanId,
@@ -131,6 +143,7 @@ class ApiClient {
                       'productId': i.productId,
                       'cantidad': i.cantidad,
                       'costoUnitario': i.costoUnitario,
+                      'descripcionCruda': ?i.descripcionCruda,
                     })
                 .toList(),
           }),

@@ -4,6 +4,8 @@ export const purchaseItemInputSchema = z.object({
   productId: z.string(),
   cantidad: z.number().positive(),
   costoUnitario: z.number().nonnegative(),
+  // Texto de la línea en la factura (escaneo con IA); se guarda como alias del producto.
+  descripcionCruda: z.string().optional(),
 });
 
 export const purchaseCreateSchema = z.object({

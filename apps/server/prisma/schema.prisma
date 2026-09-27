@@ -97,12 +97,37 @@ model Product {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  // Presentaciones (caja, paquete...): un producto puede ser "paquete de N unidades"
+  // de otro producto base. El stock vive solo en el producto base (en unidades);
+  // el de la presentación se deriva como floor(stockBase / factor).
+  presentacionDeId String?
+  factor           Float    @default(1)
+
   categoria      Category?       @relation(fields: [categoriaId], references: [id])
+  presentacionDe Product?        @relation("Presentaciones", fields: [presentacionDeId], references: [id])
+  presentaciones Product[]       @relation("Presentaciones")
+  aliases        ProductAlias[]
   purchaseItems  PurchaseItem[]
   saleItems      SaleItem[]
   stockMovements StockMovement[]
 
   @@index([categoriaId])
+  @@index([presentacionDeId])
+}
+
+// Nombres con los que un producto aparece en facturas de proveedor (abreviados,
+// distintos al nombre de venta). Se usan para reconocerlo en próximos escaneos.
+model ProductAlias {
+  id        String   @id @default(cuid())
+  productId String
+  texto     String // normalizado (minúsculas, sin tildes ni signos)
+  original  String // tal como venía en la factura
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, texto])
+  @@index([texto])
 }
 
 model PurchaseInvoice {

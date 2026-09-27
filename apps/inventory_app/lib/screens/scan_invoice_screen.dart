@@ -97,7 +97,14 @@ class _ScanInvoiceScreenState extends State<ScanInvoiceScreen> {
     try {
       await _api.registrarCompra(
         items: _result!.items
-            .map((i) => (productId: i.productId!, cantidad: i.cantidad, costoUnitario: i.costoUnitario))
+            .map((i) => (
+                  productId: i.productId!,
+                  cantidad: i.cantidad,
+                  costoUnitario: i.costoUnitario,
+                  // Se envía para que el servidor aprenda este nombre de factura
+                  // y reconozca el producto directo en el próximo escaneo.
+                  descripcionCruda: i.descripcionCruda,
+                ))
             .toList(),
         numeroFactura: _result!.numeroFactura,
         creadoPorId: widget.user.id,

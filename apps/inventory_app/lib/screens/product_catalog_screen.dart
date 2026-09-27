@@ -112,8 +112,11 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                         subtitle: Text(
                           'Costo: ${_currency.format(product.costoActual)}  ·  '
                           'Venta: ${_currency.format(product.precioVenta)}'
-                          '${product.margenOverride != null ? '  ·  margen propio: ${(product.margenOverride! * 100).toStringAsFixed(0)}%' : ''}',
+                          '${product.margenOverride != null ? '  ·  margen propio: ${(product.margenOverride! * 100).toStringAsFixed(0)}%' : ''}\n'
+                          'Stock: ${product.stockActual.toStringAsFixed(0)}'
+                          '${product.esPresentacion ? '  ·  paquete x${product.factor.toStringAsFixed(0)} de ${product.presentacionDeNombre}' : ''}',
                         ),
+                        isThreeLine: true,
                         trailing: const Icon(Icons.edit_outlined),
                         onTap: () => _editar(product),
                       );

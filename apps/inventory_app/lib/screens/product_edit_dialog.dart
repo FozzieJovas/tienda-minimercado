@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../models/product.dart';
 import '../services/api_client.dart';
 import 'barcode_scanner_screen.dart';
+import 'presentacion_selector.dart';
 
 Future<Product?> showProductEditDialog(
   BuildContext context, {
@@ -37,8 +38,23 @@ class _ProductEditDialogState extends State<_ProductEditDialog> {
   );
   late bool _usarOverride = widget.product.margenOverride != null;
   late bool _favorito = widget.product.favorito;
+  late var _presentacion = PresentacionSeleccion(
+    activo: widget.product.esPresentacion,
+    baseId: widget.product.presentacionDeId,
+    factor: widget.product.factor,
+  );
+  late List<ProductAlias> _aliases = widget.product.aliases;
   bool _submitting = false;
   String? _error;
+
+  Future<void> _quitarAlias(ProductAlias alias) async {
+    try {
+      final actualizado = await widget.api.deleteAlias(widget.product.id, alias.id);
+      setState(() => _aliases = actualizado.aliases);
+    } catch (_) {
+      setState(() => _error = 'No se pudo quitar el nombre de factura');
+    }
+  }
 
   Future<void> _guardar() async {
     final nombre = _nombreController.text.trim();
@@ -47,6 +63,13 @@ class _ProductEditDialogState extends State<_ProductEditDialog> {
       setState(() => _error = 'Completa el nombre y el costo');
       return;
     }
+    if (_presentacion.error != null) {
+      setState(() => _error = _presentacion.error);
+      return;
+    }
+    // Solo se envía el costo si se cambió: así, al vincular una caja a su unidad,
+    // el servidor toma el costo de la unidad × factor en vez de uno viejo.
+    final costoCambio = _costoController.text != widget.product.costoActual.toStringAsFixed(0);
     double? margenOverride;
     if (_usarOverride) {
       final pct = double.tryParse(_margenController.text);
@@ -66,9 +89,11 @@ class _ProductEditDialogState extends State<_ProductEditDialog> {
       final product = await widget.api.updateProduct(widget.product.id, {
         'nombre': nombre,
         'barcode': barcode.isEmpty ? null : barcode,
-        'costoActual': costo,
+        if (costoCambio) 'costoActual': costo,
         'margenOverride': margenOverride,
         'favorito': _favorito,
+        'presentacionDeId': _presentacion.activo ? _presentacion.baseId : null,
+        if (_presentacion.activo) 'factor': _presentacion.factor,
       });
       if (mounted) Navigator.of(context).pop(product);
     } on ApiException catch (e) {
@@ -95,14 +120,43 @@ class _ProductEditDialogState extends State<_ProductEditDialog> {
           children: [
             TextField(
               controller: _nombreController,
-              decoration: const InputDecoration(labelText: 'Nombre'),
+              decoration: const InputDecoration(labelText: 'Nombre de venta'),
             ),
+            if (_aliases.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Nombres en facturas (para reconocerlo al escanear):',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              Wrap(
+                spacing: 6,
+                children: [
+                  for (final alias in _aliases)
+                    InputChip(
+                      label: Text(alias.original, style: const TextStyle(fontSize: 12)),
+                      onDeleted: () => _quitarAlias(alias),
+                      deleteButtonTooltipMessage: 'Quitar',
+                    ),
+                ],
+              ),
+            ],
             BarcodeField(controller: _barcodeController),
             TextField(
               controller: _costoController,
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(labelText: 'Costo de compra actual'),
+              decoration: InputDecoration(
+                labelText: _presentacion.activo ? 'Costo del paquete' : 'Costo de compra actual',
+                helperText: 'Al cambiarlo se actualizan también sus cajas/unidades',
+              ),
+            ),
+            PresentacionSelector(
+              api: widget.api,
+              excluirId: widget.product.id,
+              baseIdInicial: widget.product.presentacionDeId,
+              baseNombreInicial: widget.product.presentacionDeNombre,
+              factorInicial: widget.product.factor,
+              onChanged: (s) => setState(() => _presentacion = s),
             ),
             const SizedBox(height: 8),
             SwitchListTile(

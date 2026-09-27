@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../models/product.dart';
 import '../services/api_client.dart';
 import 'barcode_scanner_screen.dart';
+import 'presentacion_selector.dart';
 
 Future<Product?> showNewProductDialog(
   BuildContext context, {
@@ -57,14 +58,20 @@ class _NewProductDialogState extends State<_NewProductDialog> {
   late final _costoController = TextEditingController(
     text: widget.costoSugerido != null ? widget.costoSugerido!.toStringAsFixed(0) : '',
   );
+  var _presentacion = const PresentacionSeleccion(activo: false);
   bool _submitting = false;
   String? _error;
 
   Future<void> _crear() async {
     final nombre = _nombreController.text.trim();
-    final costo = double.tryParse(_costoController.text);
+    // Una caja sin costo toma el del producto unidad × unidades que trae.
+    final costo = double.tryParse(_costoController.text) ?? (_presentacion.activo ? 0 : null);
     if (nombre.isEmpty || costo == null) {
       setState(() => _error = 'Completa el nombre y el costo');
+      return;
+    }
+    if (_presentacion.error != null) {
+      setState(() => _error = _presentacion.error);
       return;
     }
     setState(() {
@@ -77,6 +84,9 @@ class _NewProductDialogState extends State<_NewProductDialog> {
         nombre: nombre,
         barcode: barcode.isEmpty ? null : barcode,
         costoActual: costo,
+        alias: widget.nombreSugerido,
+        presentacionDeId: _presentacion.activo ? _presentacion.baseId : null,
+        factor: _presentacion.activo ? _presentacion.factor : null,
       );
       if (mounted) Navigator.of(context).pop(product);
     } on ApiException catch (e) {
@@ -96,26 +106,45 @@ class _NewProductDialogState extends State<_NewProductDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Producto nuevo'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: _nombreController,
-            decoration: const InputDecoration(labelText: 'Nombre'),
-          ),
-          BarcodeField(controller: _barcodeController),
-          TextField(
-            controller: _costoController,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: const InputDecoration(labelText: 'Costo de compra'),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 8),
-            Text(_error!, style: const TextStyle(color: Colors.red)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (widget.nombreSugerido != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  'En la factura: "${widget.nombreSugerido}"\n'
+                  'Puedes cambiar el nombre de venta; este se guarda para reconocerlo '
+                  'en las próximas facturas.',
+                  style: const TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+              ),
+            TextField(
+              controller: _nombreController,
+              decoration: const InputDecoration(labelText: 'Nombre de venta'),
+            ),
+            BarcodeField(controller: _barcodeController),
+            TextField(
+              controller: _costoController,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: InputDecoration(
+                labelText: _presentacion.activo ? 'Costo del paquete' : 'Costo de compra',
+                helperText: _presentacion.activo ? 'Vacío = costo de la unidad × unidades' : null,
+              ),
+            ),
+            PresentacionSelector(
+              api: widget.api,
+              onChanged: (s) => setState(() => _presentacion = s),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: const TextStyle(color: Colors.red)),
+            ],
           ],
-        ],
+        ),
       ),
       actions: [
         TextButton(

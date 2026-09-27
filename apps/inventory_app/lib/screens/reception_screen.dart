@@ -89,7 +89,12 @@ class _ReceptionScreenState extends State<ReceptionScreen> {
     try {
       await _api.registrarCompra(
         items: _items
-            .map((i) => (productId: i.product.id, cantidad: i.cantidad, costoUnitario: i.costoUnitario))
+            .map((i) => (
+                  productId: i.product.id,
+                  cantidad: i.cantidad,
+                  costoUnitario: i.costoUnitario,
+                  descripcionCruda: null,
+                ))
             .toList(),
         numeroFactura: _numeroFacturaController.text.trim().isEmpty ? null : _numeroFacturaController.text.trim(),
         creadoPorId: widget.user.id,

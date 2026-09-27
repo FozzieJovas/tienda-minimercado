@@ -7,6 +7,7 @@ import { z } from "zod";
 import { prisma } from "../../db/client.js";
 import { purchaseCreateSchema } from "./schemas.js";
 import { calcularPrecioVenta, resolveMargin } from "../products/pricing.js";
+import { aplicarCostoFamilia, duenoDelStock, guardarAlias } from "../products/family.js";
 import { PURCHASE_UPLOADS_DIR } from "../../config/paths.js";
 import { extractInvoiceFromImages } from "../../ai/geminiClient.js";
 import { matchProduct } from "./matching.js";
@@ -71,7 +72,10 @@ export const purchaseRoutes: FastifyPluginAsync = async (app) => {
     // items vacíos es indistinguible de un fallo real sin ver qué devolvió Gemini.
     request.log.info({ extraction }, "Extracción de factura con IA");
 
-    const catalogo = await prisma.product.findMany({ where: { activo: true }, include: { categoria: true } });
+    const catalogo = await prisma.product.findMany({
+      where: { activo: true },
+      include: { categoria: true, aliases: true },
+    });
 
     const items = await Promise.all(
       extraction.items.map(async (item) => {
@@ -118,7 +122,6 @@ export const purchaseRoutes: FastifyPluginAsync = async (app) => {
 
       const products = await prisma.product.findMany({
         where: { id: { in: items.map((i) => i.productId) } },
-        include: { categoria: true },
       });
       const productMap = new Map(products.map((p) => [p.id, p]));
 
@@ -133,7 +136,7 @@ export const purchaseRoutes: FastifyPluginAsync = async (app) => {
         const subtotal = Math.round(item.costoUnitario * item.cantidad * 100) / 100;
         return {
           productId: item.productId,
-          descripcionCruda: product.nombre,
+          descripcionCruda: item.descripcionCruda ?? product.nombre,
           cantidad: item.cantidad,
           costoUnitario: item.costoUnitario,
           subtotal,
@@ -157,28 +160,28 @@ export const purchaseRoutes: FastifyPluginAsync = async (app) => {
 
         for (const item of items) {
           const product = productMap.get(item.productId)!;
-          const margen = await resolveMargin({
-            margenOverride: product.margenOverride,
-            categoriaMargenDefault: product.categoria?.margenDefault,
-          });
+          // Recibir 2 cajas x12 suma 24 unidades al producto base, y el costo de la
+          // caja actualiza el de toda la familia (unidad, caja, paquete...).
+          const dueno = duenoDelStock(product);
+          const unidades = item.cantidad * dueno.factor;
 
           await tx.product.update({
-            where: { id: item.productId },
-            data: {
-              stockActual: { increment: item.cantidad },
-              costoActual: item.costoUnitario,
-              precioVenta: calcularPrecioVenta(item.costoUnitario, margen),
-            },
+            where: { id: dueno.id },
+            data: { stockActual: { increment: unidades } },
           });
+          await aplicarCostoFamilia(tx, item.productId, item.costoUnitario);
           await tx.stockMovement.create({
             data: {
-              productId: item.productId,
+              productId: dueno.id,
               tipo: "COMPRA",
-              cantidadDelta: item.cantidad,
+              cantidadDelta: unidades,
               referenciaTipo: "purchase",
               referenciaId: created.id,
             },
           });
+          if (item.descripcionCruda) {
+            await guardarAlias(tx, item.productId, item.descripcionCruda, product.nombre);
+          }
         }
 
         return created;

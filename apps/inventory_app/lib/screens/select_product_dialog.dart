@@ -3,17 +3,26 @@ import '../models/product.dart';
 import '../services/api_client.dart';
 import 'barcode_scanner_screen.dart';
 
-Future<Product?> showSelectProductDialog(BuildContext context, {required ApiClient api}) {
+/// [soloBase]: oculta las presentaciones (cajas/paquetes) y [excluirId], para
+/// elegir el producto unidad del que otro es presentación.
+Future<Product?> showSelectProductDialog(
+  BuildContext context, {
+  required ApiClient api,
+  bool soloBase = false,
+  String? excluirId,
+}) {
   return showDialog<Product>(
     context: context,
-    builder: (context) => _SelectProductDialog(api: api),
+    builder: (context) => _SelectProductDialog(api: api, soloBase: soloBase, excluirId: excluirId),
   );
 }
 
 class _SelectProductDialog extends StatefulWidget {
   final ApiClient api;
+  final bool soloBase;
+  final String? excluirId;
 
-  const _SelectProductDialog({required this.api});
+  const _SelectProductDialog({required this.api, required this.soloBase, this.excluirId});
 
   @override
   State<_SelectProductDialog> createState() => _SelectProductDialogState();
@@ -27,7 +36,10 @@ class _SelectProductDialogState extends State<_SelectProductDialog> {
   Future<void> _buscar(String query) async {
     setState(() => _loading = true);
     try {
-      _results = await widget.api.searchProducts(query);
+      final todos = await widget.api.searchProducts(query);
+      _results = widget.soloBase
+          ? todos.where((p) => !p.esPresentacion && p.id != widget.excluirId).toList()
+          : todos;
     } catch (_) {
       _results = [];
     }
@@ -48,7 +60,9 @@ class _SelectProductDialogState extends State<_SelectProductDialog> {
     try {
       final product = await widget.api.findByBarcode(code);
       if (!mounted) return;
-      if (product != null) {
+      final permitido = product != null &&
+          (!widget.soloBase || (!product.esPresentacion && product.id != widget.excluirId));
+      if (permitido) {
         Navigator.of(context).pop(product);
         return;
       }

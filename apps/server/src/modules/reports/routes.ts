@@ -38,7 +38,8 @@ export const reportRoutes: FastifyPluginAsync = async (app) => {
 
   server.get("/reports/low-stock", { schema: { tags: ["reports"] } }, async () => {
     const productos = await prisma.product.findMany({
-      where: { activo: true },
+      // Las presentaciones (cajas) no llevan stock propio; se mira el producto base.
+      where: { activo: true, presentacionDeId: null },
       include: { categoria: true },
     });
     return productos.filter((p) => p.stockActual <= p.stockMinimo);

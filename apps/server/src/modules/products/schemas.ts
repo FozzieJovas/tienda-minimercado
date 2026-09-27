@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const productCreateSchema = z.object({
+const productFields = z.object({
   sku: z.string().optional(),
   barcode: z.string().optional(),
   nombre: z.string().min(1),
@@ -11,15 +11,23 @@ export const productCreateSchema = z.object({
   stockActual: z.number().default(0),
   stockMinimo: z.number().nonnegative().default(0),
   favorito: z.boolean().default(false),
+  presentacionDeId: z.string().optional(),
+  factor: z.number().positive().default(1),
 });
 
-export const productUpdateSchema = productCreateSchema.partial().extend({
+export const productCreateSchema = productFields.extend({
+  // Nombre con que venía en la factura escaneada, si difiere del nombre de venta.
+  alias: z.string().optional(),
+});
+
+export const productUpdateSchema = productFields.partial().extend({
   // A diferencia de create, en update `null` es un valor válido para estos
   // campos: significa "quitarlo" (dejar el producto sin código de barras,
-  // sin categoría, o sin margen propio -- volviendo al de categoría/global).
+  // sin categoría, sin margen propio, o dejar de ser presentación de otro).
   barcode: z.string().nullable().optional(),
   categoriaId: z.string().nullable().optional(),
   margenOverride: z.number().min(-1).nullable().optional(),
+  presentacionDeId: z.string().nullable().optional(),
 });
 
 export const productParamsSchema = z.object({

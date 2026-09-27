@@ -3,6 +3,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { prisma } from "../../db/client.js";
 import { saleCreateSchema } from "./schemas.js";
+import { duenoDelStock } from "../products/family.js";
 
 export const saleRoutes: FastifyPluginAsync = async (app) => {
   const server = app.withTypeProvider<ZodTypeProvider>();
@@ -99,15 +100,18 @@ export const saleRoutes: FastifyPluginAsync = async (app) => {
         });
 
         for (const item of saleItemsData) {
+          // Vender una caja x12 descuenta 12 unidades del producto base.
+          const dueno = duenoDelStock(productMap.get(item.productId)!);
+          const unidades = item.cantidad * dueno.factor;
           await tx.product.update({
-            where: { id: item.productId },
-            data: { stockActual: { decrement: item.cantidad } },
+            where: { id: dueno.id },
+            data: { stockActual: { decrement: unidades } },
           });
           await tx.stockMovement.create({
             data: {
-              productId: item.productId,
+              productId: dueno.id,
               tipo: "VENTA",
-              cantidadDelta: -item.cantidad,
+              cantidadDelta: -unidades,
               referenciaTipo: "sale",
               referenciaId: created.id,
             },
@@ -125,21 +129,26 @@ export const saleRoutes: FastifyPluginAsync = async (app) => {
     "/sales/:id/anular",
     { schema: { tags: ["sales"], params: z.object({ id: z.string() }) } },
     async (request, reply) => {
-      const sale = await prisma.sale.findUnique({ where: { id: request.params.id }, include: { items: true } });
+      const sale = await prisma.sale.findUnique({
+        where: { id: request.params.id },
+        include: { items: { include: { product: true } } },
+      });
       if (!sale) return reply.code(404).send({ error: "Venta no encontrada" });
       if (sale.estado === "ANULADA") return reply.code(400).send({ error: "La venta ya está anulada" });
 
       const updated = await prisma.$transaction(async (tx) => {
         for (const item of sale.items) {
+          const dueno = duenoDelStock(item.product);
+          const unidades = item.cantidad * dueno.factor;
           await tx.product.update({
-            where: { id: item.productId },
-            data: { stockActual: { increment: item.cantidad } },
+            where: { id: dueno.id },
+            data: { stockActual: { increment: unidades } },
           });
           await tx.stockMovement.create({
             data: {
-              productId: item.productId,
+              productId: dueno.id,
               tipo: "AJUSTE",
-              cantidadDelta: item.cantidad,
+              cantidadDelta: unidades,
               referenciaTipo: "sale-anulada",
               referenciaId: sale.id,
             },

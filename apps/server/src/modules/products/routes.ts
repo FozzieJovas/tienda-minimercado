@@ -3,7 +3,20 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { prisma } from "../../db/client.js";
 import { productCreateSchema, productParamsSchema, productUpdateSchema } from "./schemas.js";
-import { calcularPrecioVenta, resolveMargin } from "./pricing.js";
+import {
+  aplicarCostoFamilia,
+  conStockDerivado,
+  duenoDelStock,
+  guardarAlias,
+  normalizarTexto,
+  productInclude,
+  recalcularPrecio,
+  validarPresentacion,
+} from "./family.js";
+
+async function cargarProducto(id: string) {
+  return conStockDerivado(await prisma.product.findUniqueOrThrow({ where: { id }, include: productInclude }));
+}
 
 export const productRoutes: FastifyPluginAsync = async (app) => {
   const server = app.withTypeProvider<ZodTypeProvider>();
@@ -23,17 +36,27 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
     async (request) => {
       const { activo, favorito, search } = request.query;
       const texto = search?.trim();
-      return prisma.product.findMany({
+      const textoNormalizado = texto ? normalizarTexto(texto) : "";
+      const products = await prisma.product.findMany({
         where: {
           ...(activo === undefined ? {} : { activo }),
           ...(favorito === undefined ? {} : { favorito }),
           ...(texto
-            ? { OR: [{ nombre: { contains: texto } }, { barcode: { contains: texto } }] }
+            ? {
+                OR: [
+                  { nombre: { contains: texto } },
+                  { barcode: { contains: texto } },
+                  ...(textoNormalizado
+                    ? [{ aliases: { some: { texto: { contains: textoNormalizado } } } }]
+                    : []),
+                ],
+              }
             : {}),
         },
-        include: { categoria: true },
+        include: productInclude,
         orderBy: { nombre: "asc" },
       });
+      return products.map(conStockDerivado);
     }
   );
 
@@ -43,10 +66,10 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
     async (request, reply) => {
       const product = await prisma.product.findUnique({
         where: { id: request.params.id },
-        include: { categoria: true },
+        include: productInclude,
       });
       if (!product) return reply.code(404).send({ error: "Producto no encontrado" });
-      return product;
+      return conStockDerivado(product);
     }
   );
 
@@ -56,10 +79,10 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
     async (request, reply) => {
       const product = await prisma.product.findUnique({
         where: { barcode: request.params.barcode },
-        include: { categoria: true },
+        include: productInclude,
       });
       if (!product) return reply.code(404).send({ error: "No hay ningún producto con ese código de barras" });
-      return product;
+      return conStockDerivado(product);
     }
   );
 
@@ -67,21 +90,38 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
     "/products",
     { schema: { tags: ["products"], body: productCreateSchema } },
     async (request, reply) => {
-      const data = request.body;
-      const categoria = data.categoriaId
-        ? await prisma.category.findUnique({ where: { id: data.categoriaId } })
-        : null;
-      const margen = await resolveMargin({
-        margenOverride: data.margenOverride,
-        categoriaMargenDefault: categoria?.margenDefault,
+      const { alias, ...data } = request.body;
+      if (data.presentacionDeId) {
+        const error = await validarPresentacion(prisma, null, data.presentacionDeId);
+        if (error) return reply.code(400).send({ error });
+      }
+
+      const id = await prisma.$transaction(async (tx) => {
+        const created = await tx.product.create({
+          data: { ...data, stockActual: data.presentacionDeId ? 0 : data.stockActual },
+        });
+
+        if (created.presentacionDeId && data.stockActual) {
+          const dueno = duenoDelStock(created);
+          await tx.product.update({
+            where: { id: dueno.id },
+            data: { stockActual: { increment: data.stockActual * dueno.factor } },
+          });
+        }
+
+        // Una presentación nueva sin costo toma el del producto base multiplicado por su factor.
+        let costo = data.costoActual;
+        if (created.presentacionDeId && costo === 0) {
+          const base = await tx.product.findUniqueOrThrow({ where: { id: created.presentacionDeId } });
+          costo = base.costoActual * created.factor;
+        }
+        await aplicarCostoFamilia(tx, created.id, costo);
+
+        if (alias) await guardarAlias(tx, created.id, alias, created.nombre);
+        return created.id;
       });
-      const product = await prisma.product.create({
-        data: {
-          ...data,
-          precioVenta: calcularPrecioVenta(data.costoActual, margen),
-        },
-      });
-      return reply.code(201).send(product);
+
+      return reply.code(201).send(await cargarProducto(id));
     }
   );
 
@@ -92,29 +132,61 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
       const existing = await prisma.product.findUnique({ where: { id: request.params.id } });
       if (!existing) return reply.code(404).send({ error: "Producto no encontrado" });
 
-      const data = request.body;
-      // Mismo motivo que margenOverride abajo: null explícito es "quitar categoría".
-      const categoriaId = "categoriaId" in data ? data.categoriaId : existing.categoriaId;
-      const categoria = categoriaId
-        ? await prisma.category.findUnique({ where: { id: categoriaId } })
-        : null;
-      const costoActual = data.costoActual ?? existing.costoActual;
-      // "margenOverride" en null es explícito ("quitar el override"), distinto de
-      // no enviarlo (mantener el actual) -- por eso no se puede usar `??` aquí.
-      const margenOverride = "margenOverride" in data ? data.margenOverride : existing.margenOverride;
-      const margen = await resolveMargin({
-        margenOverride,
-        categoriaMargenDefault: categoria?.margenDefault,
+      const { costoActual, stockActual, ...resto } = request.body;
+      // null explícito ("dejar de ser presentación") es distinto de no enviarlo (mantener).
+      const nuevoBaseId =
+        "presentacionDeId" in resto ? (resto.presentacionDeId ?? null) : existing.presentacionDeId;
+      const nuevoFactor = resto.factor ?? existing.factor;
+
+      if (nuevoBaseId && nuevoBaseId !== existing.presentacionDeId) {
+        const error = await validarPresentacion(prisma, existing.id, nuevoBaseId);
+        if (error) return reply.code(400).send({ error });
+      }
+      const cambioVinculo = nuevoBaseId !== existing.presentacionDeId || nuevoFactor !== existing.factor;
+
+      await prisma.$transaction(async (tx) => {
+        await tx.product.update({ where: { id: existing.id }, data: resto });
+
+        // El stock solo se fija directamente en productos base; el de una presentación se deriva.
+        if (stockActual !== undefined && !nuevoBaseId) {
+          await tx.product.update({ where: { id: existing.id }, data: { stockActual } });
+        }
+
+        // Al volverse presentación, el stock que tenía pasa al producto base (en unidades).
+        if (nuevoBaseId && !existing.presentacionDeId && existing.stockActual !== 0) {
+          const unidades = existing.stockActual * nuevoFactor;
+          await tx.product.update({ where: { id: nuevoBaseId }, data: { stockActual: { increment: unidades } } });
+          await tx.product.update({ where: { id: existing.id }, data: { stockActual: 0 } });
+          await tx.stockMovement.createMany({
+            data: [
+              { productId: existing.id, tipo: "AJUSTE", cantidadDelta: -existing.stockActual, referenciaTipo: "presentacion-vinculada", referenciaId: nuevoBaseId },
+              { productId: nuevoBaseId, tipo: "AJUSTE", cantidadDelta: unidades, referenciaTipo: "presentacion-vinculada", referenciaId: existing.id },
+            ],
+          });
+        }
+
+        if (costoActual !== undefined) {
+          await aplicarCostoFamilia(tx, existing.id, costoActual);
+        } else if (cambioVinculo && nuevoBaseId) {
+          const base = await tx.product.findUniqueOrThrow({ where: { id: nuevoBaseId } });
+          await aplicarCostoFamilia(tx, existing.id, base.costoActual * nuevoFactor);
+        } else {
+          await recalcularPrecio(tx, existing.id);
+        }
       });
 
-      const product = await prisma.product.update({
-        where: { id: request.params.id },
-        data: {
-          ...data,
-          precioVenta: calcularPrecioVenta(costoActual, margen),
-        },
+      return cargarProducto(existing.id);
+    }
+  );
+
+  server.delete(
+    "/products/:id/aliases/:aliasId",
+    { schema: { tags: ["products"], params: z.object({ id: z.string(), aliasId: z.string() }) } },
+    async (request) => {
+      await prisma.productAlias.deleteMany({
+        where: { id: request.params.aliasId, productId: request.params.id },
       });
-      return product;
+      return cargarProducto(request.params.id);
     }
   );
 
@@ -135,22 +207,20 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
       const existing = await prisma.product.findUnique({ where: { id: request.params.id } });
       if (!existing) return reply.code(404).send({ error: "Producto no encontrado" });
 
+      // cantidadDelta viene en unidades del producto elegido (p. ej. cajas); se aplica al base.
       const { cantidadDelta, tipo, motivo } = request.body;
-      const [product] = await prisma.$transaction([
+      const dueno = duenoDelStock(existing);
+      const delta = cantidadDelta * dueno.factor;
+      await prisma.$transaction([
         prisma.product.update({
-          where: { id: request.params.id },
-          data: { stockActual: { increment: cantidadDelta } },
+          where: { id: dueno.id },
+          data: { stockActual: { increment: delta } },
         }),
         prisma.stockMovement.create({
-          data: {
-            productId: request.params.id,
-            tipo,
-            cantidadDelta,
-            referenciaTipo: motivo,
-          },
+          data: { productId: dueno.id, tipo, cantidadDelta: delta, referenciaTipo: motivo },
         }),
       ]);
-      return product;
+      return cargarProducto(existing.id);
     }
   );
 
@@ -158,11 +228,11 @@ export const productRoutes: FastifyPluginAsync = async (app) => {
     "/products/:id",
     { schema: { tags: ["products"], params: productParamsSchema } },
     async (request) => {
-      const product = await prisma.product.update({
+      await prisma.product.update({
         where: { id: request.params.id },
         data: { activo: false },
       });
-      return product;
+      return cargarProducto(request.params.id);
     }
   );
 };
